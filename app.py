@@ -1,129 +1,151 @@
 import streamlit as st
 import json
 import os
-from datetime import date
+import hashlib
 import pandas as pd
 
-st.set_page_config(page_title="Pro Productivity Tracker", page_icon="🚀")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(page_title="Productivity Tracker", page_icon="🚀", layout="wide")
 
-USERS_FILE = "users.json"
+# ---------------- BACKGROUND STYLE ----------------
+st.markdown("""
+<style>
+.stApp {
+    background-image: url("https://images.unsplash.com/photo-1519389950473-47ba0277781c");
+    background-size: cover;
+}
+.glass {
+    background: rgba(0,0,0,0.65);
+    padding: 25px;
+    border-radius: 15px;
+    color: white;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ------------------ FILE FUNCTIONS ------------------
-def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    return {}
+# ---------------- DATABASE FILE ----------------
+DATA_FILE = "data.json"
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({}, f)
 
-# ------------------ LOGIN SYSTEM ------------------
-if "user" not in st.session_state:
-    st.session_state.user = None
+def load_data():
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-users = load_users()
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
 
-st.title("🔐 Login / Signup")
+# ---------------- PASSWORD HASH ----------------
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-if st.session_state.user is None:
-    choice = st.radio("Choose", ["Login", "Signup"])
+# ---------------- SESSION ----------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+# ---------------- LOGIN PAGE ----------------
+def login_page():
+    st.markdown("<h1 style='text-align:center;color:white;'>🚀 Productivity Tracker</h1>", unsafe_allow_html=True)
+    st.markdown('<div class="glass">', unsafe_allow_html=True)
 
-    if choice == "Signup":
-        if st.button("Create Account"):
-            if username in users:
-                st.error("User already exists")
+    data = load_data()
+
+    tab1, tab2 = st.tabs(["🔐 Login", "🆕 Signup"])
+
+    # LOGIN
+    with tab1:
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+
+        if st.button("Login"):
+            if username in data and data[username]["password"] == hash_password(password):
+                st.session_state.logged_in = True
+                st.session_state.user = username
+                st.success("Login successful 🎉")
+                st.rerun()
             else:
-                users[username] = {
-                    "password": password,
+                st.error("Invalid credentials ❌")
+
+    # SIGNUP
+    with tab2:
+        new_user = st.text_input("New Username")
+        new_pass = st.text_input("New Password", type="password")
+
+        if st.button("Create Account"):
+            if new_user in data:
+                st.warning("User already exists ⚠️")
+            else:
+                data[new_user] = {
+                    "password": hash_password(new_pass),
                     "tasks": []
                 }
-                save_users(users)
-                st.success("Account created! Now login.")
+                save_data(data)
+                st.success("Account created ✅")
 
-    else:
-        if st.button("Login"):
-            if username in users and users[username]["password"] == password:
-                st.session_state.user = username
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------------- MAIN APP ----------------
+def main_app():
+    data = load_data()
+    user = st.session_state.user
+
+    st.sidebar.title("🚀 Menu")
+    menu = st.sidebar.radio("Navigate", ["🏠 Dashboard", "📝 Tasks", "📊 Stats", "🚪 Logout"])
+
+    st.title(f"Welcome, {user} 👋")
+
+    # DASHBOARD
+    if menu == "🏠 Dashboard":
+        st.subheader("📊 Daily Productivity")
+        progress = st.slider("Your productivity", 0, 100, 50)
+        st.progress(progress)
+
+    # TASKS
+    elif menu == "📝 Tasks":
+        st.subheader("Your Tasks")
+
+        new_task = st.text_input("Add new task")
+
+        if st.button("Add Task"):
+            if new_task:
+                data[user]["tasks"].append(new_task)
+                save_data(data)
                 st.rerun()
-            else:
-                st.error("Invalid credentials")
 
-# ------------------ MAIN APP ------------------
-else:
-    st.sidebar.write(f"👋 Welcome {st.session_state.user}")
+        st.markdown("### ✅ Task List")
+        for i, task in enumerate(data[user]["tasks"]):
+            col1, col2 = st.columns([8,1])
+            col1.write("✔", task)
+            if col2.button("❌", key=i):
+                data[user]["tasks"].pop(i)
+                save_data(data)
+                st.rerun()
 
-    if st.sidebar.button("Logout"):
-        st.session_state.user = None
+    # STATS
+    elif menu == "📊 Stats":
+        st.subheader("📈 Your Stats")
+
+        total_tasks = len(data[user]["tasks"])
+
+        df = pd.DataFrame({
+            "Category": ["Tasks"],
+            "Count": [total_tasks]
+        })
+
+        st.bar_chart(df.set_index("Category"))
+
+    # LOGOUT
+    elif menu == "🚪 Logout":
+        st.session_state.logged_in = False
         st.rerun()
 
-    user_data = users[st.session_state.user]
-    tasks = user_data["tasks"]
+# ---------------- ROUTER ----------------
+if st.session_state.logged_in:
+    main_app()
+else:
+    login_page()
 
-    st.title("🚀 Your Productivity Dashboard")
-
-    # ➕ Add Task
-    st.subheader("➕ Add Task")
-
-    task = st.text_input("Task")
-    due = st.date_input("Due date", value=date.today())
-    priority = st.selectbox("Priority", ["High", "Medium", "Low"])
-
-    if st.button("Add Task"):
-        if task.strip():
-            tasks.append({
-                "task": task,
-                "done": False,
-                "due": str(due),
-                "priority": priority
-            })
-            save_users(users)
-            st.rerun()
-
-    # 📝 Show Tasks
-    st.subheader("📝 Tasks")
-
-    for i, t in enumerate(tasks):
-        col1, col2, col3, col4 = st.columns([0.1, 0.4, 0.3, 0.2])
-
-        with col1:
-            new_status = st.checkbox("", value=t["done"], key=f"check_{i}")
-            if new_status != t["done"]:
-                t["done"] = new_status
-                save_users(users)
-                st.rerun()
-
-        with col2:
-            if t["done"]:
-                st.markdown(f"~~{t['task']}~~")
-            else:
-                st.write(t["task"])
-
-        with col3:
-            st.write(f"📅 {t['due']}")
-            st.write(f"🔥 {t['priority']}")
-
-        with col4:
-            if st.button("❌", key=f"del_{i}"):
-                tasks.pop(i)
-                save_users(users)
-                st.rerun()
-
-    # 📊 Progress
-    st.subheader("📊 Progress")
-
-    total = len(tasks)
-    completed = sum(1 for t in tasks if t["done"])
-
-    if total > 0:
-        st.progress(completed / total)
-        st.write(f"✅ {completed}/{total} done")
-
-        df = pd.DataFrame(tasks)
-        st.bar_chart(df["done"].value_counts())
-    else:
-        st.info("No tasks yet")
+       
