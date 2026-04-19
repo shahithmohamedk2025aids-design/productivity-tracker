@@ -116,9 +116,11 @@ def main_app():
                 st.rerun()
 
         st.markdown("### ✅ Task List")
-        for i, task in enumerate(data[user]["tasks"]):
+          tasks = ["Study", "Workout", "Read"]
+
+for task in tasks:
     col1, col2 = st.columns([8,1])
-    col1.write(f"✔ {task}")   
+    col1.write(f"- {task}")
             if col2.button("❌", key=i):
                 data[user]["tasks"].pop(i)
                 save_data(data)
